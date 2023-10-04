@@ -1,0 +1,185 @@
+---
+title: "CFA: Self-esteem"
+author: "Victoria Bolotova"
+date: "12 06 2022"
+output: 
+    html_document:
+      theme: cosmo
+      code_folding: show
+      toc: true
+      toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Reading the data
+
+```{r}
+library(EFA.dimensions)
+self_esteem <- as.data.frame(data_RSE)
+```
+
+# Description of manifest variables
+
+* Q1 - On the whole, I am satisfied with myself. 
+* Q2 - At times I think I am no good at all. 
+* Q3 - I feel that I have a number of good qualities. 
+* Q4 - I am able to do things as well as most other people. 
+* Q5 - I feel I do not have much to be proud of. 
+* Q6 - I certainly feel useless at times. 
+* Q7 - I feel that I'm a person of worth, at least on an equal plane with others. 
+* Q8 - I wish I could have more respect for myself. 
+* Q9 - All in all, I am inclined to feel that I am a failure. 
+* Q10 - I take a positive attitude toward myself. 
+
+Items 2, 5, 6, 8, 9 are reverse scored.
+
+**Theoretical assumption is that all 10 questions belong to one factor**
+
+# Preparatory steps 
+
+* There are no NAs in the data, but there 9 observations that have 0. 
+
+## Delete 0
+
+```{r}
+self_esteem[self_esteem == 0] <- NA
+
+self_esteem <- na.omit(self_esteem)
+nrow(self_esteem)
+```
+
+* By deleting zeros, we lose 9 observations. Now we have 291 observations. 
+
+## Check the type of variables
+
+```{r}
+sapply(self_esteem, class) 
+```
+
+* We should transform all variables into a factor type, because all variables have only 4 levels. Moreover, these variables are of ordinal type of measurement, so we cannot treat them as numeric or integer. 
+
+## Transform to factor
+
+```{r}
+self_esteem[, 1:10] <- lapply(self_esteem[, 1:10], as.factor)
+```
+
+# CFA
+
+## Syntax for the respective theoretical model
+
+```{r}
+library(lavaan)
+
+model_1 <- '
+self_esteem =~ Q1 + Q2 + Q3 + Q4 + Q5 + Q6 + Q7 + Q8 + Q9 + Q10
+'
+```
+
+## Fitting 
+
+```{r}
+self_esteem[,] <- lapply(self_esteem[,], ordered)
+fit_1 <- cfa(model_1, data = self_esteem)
+summary(fit_1, standardized=TRUE, fit.measures=TRUE, modindices=TRUE)
+```
+* Tucker-Lewis Index (TLI) is excellent (0.994)
+* Comparative Fit Index (CFI) is also excellent 0.996
+* RMSEA index equals to 0.087 (<.08 acceptable, <.05 excellent), which is close to acceptable
+* SRMR equals to 0.05, which is close to excellent
+
+-> In accordance with above indexes, the model is good, but
+
+* P-value of Chi-square equals to 0.000, which says to us that the model is different from data, but all important indexes confirmed that the model is good, thus, we can be sure in this model.
+
+* As for factor loadings, all of them are significant according to p-values (0.000). 
+
+- It is expected result that some manifest variables entered with a minus sign in the factor, they are: 
+
+  - Q3, I feel that I have a number of good qualities. (not reverse scored)
+  - Q5, I am able to do things as well as most other people. (reverse scored)
+  - Q8, I wish I could have more respect for myself. (reverse scored)
+  - Q9, All in all, I am inclined to feel that I am a failure (reverse scored)
+  - Q10, I take a positive attitude toward myself. (not reverse scored)
+  
+However, in the documentation it is stated that items 2, 5, 6, 8, 9 are reverse scored.
+
+- Factors with plus sign in the factor
+
+  - Q1, On the whole, I am satisfied with myself.(not reverse scored)
+  - Q2, At times I think I am no good at all. (reverse scored))
+  - Q4, I am able to do things as well as most other people. (not reverse scored)
+  - Q6, I certainly feel useless at times. (reverse scored)
+  - Q7, I feel that I'm a person of worth, at least on an equal plane with others. (not reverse scored)
+  
+  
+## Find problematic parameteris by MI and EPC
+
+* MI (threshold is 3.84 - should be less than this value) shows how Chi-square would change if we estimate some additional parameters. 
+
+* EPC shows us the value to what the corresponding parameter equals to (correlation)
+
+```{r}
+mi_1 <- modindices(fit_1)
+mi_1[mi_1$mi > 3.84, 1:5]
+```
+
+
+- The highest modification indices (correlations) have parameters:
+  - Q1 (On the whole, I am satisfied with myself) ~~  Q2 (At times I think I am no good at all)
+  - Q6 ~~  Q7 
+  - Q9 ~~ Q10 
+  - Q1 ~~ Q10
+  - Q2 ~~  Q8
+  - But other parameters also have problematic mi and epc 
+  
+Such problematic parameters' values indicate that some manifest variables have correlation that is not fully explained by factor. 
+
+## Improve model
+
+We can definitely improve the model by adding the highest correlations among variables to the model structure:
+
+### Syntax for the respective theoretical model
+
+```{r}
+model_2 <- '
+self_esteem =~ Q1 + Q2 + Q3 + Q4 + Q5 + Q6 + Q7 + Q8 + Q9 + Q10
+Q1 ~~  Q2
+Q9 ~~ Q10
+Q6 ~~  Q7
+'
+```
+
+### Fitting
+
+```{r}
+fit_2 <- cfa(model_2, data = self_esteem)
+summary(fit_2, standardized=TRUE, fit.measures=TRUE, modindices=TRUE)
+```
+
+Let us see whether indexes become better or not after adding correlations among some variables to structure of our model:
+
+* Tucker-Lewis Index (TLI) becomes even better (0.998)
+* Comparative Fit Index (CFI) is also become even better 0.999
+* RMSEA index equals becomes smaller: for this model it equals 0.045, for previous model it was 0.087, which is great change!
+* SRMR equals to 0.043, for previous model it was 0.05, thus, also become better!
+
+Thus, model becomes better after adding three correlations among variables that are not fully explained by one common factor. However, to be sure that the second model is significantly better than the first one we should run anova.
+
+## Anova 
+
+```{r}
+anova(fit_1, fit_2)
+```
+
+* Anova result shows that the second model is significantly better than the first one. It means that the second model explains data better, than the first one. 
+* We have lost 3 degrees of freedom
+* Chi-square is 81, which is really high
+* Thus, the second model is better
+
+
+That is all for this work :)
+
